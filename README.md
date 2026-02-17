@@ -24,8 +24,15 @@ Desktop application for visualizing and analyzing Large Language Model internals
 git clone https://github.com/miolini/attention-studio.git
 cd attention-studio
 
+# Install uv if you don't have it
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Create and activate virtual environment
+uv venv
+source .venv/bin/activate
+
 # Install with development dependencies
-pip install -e ".[dev]"
+uv pip install -e ".[dev]"
 ```
 
 ## Usage
@@ -47,6 +54,9 @@ python -m attention_studio
 ## Development
 
 ```bash
+# Activate virtual environment
+source .venv/bin/activate
+
 # Run tests
 pytest
 
