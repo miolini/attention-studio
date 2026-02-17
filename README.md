@@ -1,6 +1,15 @@
 # AttentionStudio
 
-Desktop application for visualizing and analyzing Large Language Model internals using Complete Replacement Models (CRM) methodology, based on [Anthropic's research](https://transformer-circuits.pub/2025/attribution-graphs/methods.html).
+Desktop application for visualizing and analyzing Large Language Model internals using Complete Replacement Models (CRM) methodology, based on [OpenMOSS research](https://interp.open-moss.com/posts/complete-replacement).
+
+## Paper
+
+**Bridging the Attention Gap: Complete Replacement Models for Complete Circuit Tracing**  
+OpenMOSS Team, Shanghai Innovation Institute & Fudan University
+
+Authors: Wentao Shu, Xuyang Ge, Zhaoxuan Song, Zhengfu He, Guancheng Zhou, Junxuan Wang, Rui Lin, Jiaxing Wu, Xipeng Qiu
+
+Correspondence: xpqiu@fudan.edu.cn
 
 ## Features
 
