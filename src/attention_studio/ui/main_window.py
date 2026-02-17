@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QGraphicsScene,
-    QGraphicsView,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -38,6 +37,10 @@ from PySide6.QtWidgets import (
 )
 
 from attention_studio.agents.agents import AgentConfig, AgentManager
+from attention_studio.core.attribution_graph import (
+    AttributionGraphBuilder,
+    CompleteAttributionGraph,
+)
 from attention_studio.core.dataset import DatasetConfig, DatasetManager
 from attention_studio.core.feature_extractor import (
     FeatureExtractor,
@@ -46,6 +49,7 @@ from attention_studio.core.feature_extractor import (
 )
 from attention_studio.core.model_manager import ModelConfig, ModelManager
 from attention_studio.core.trainer import CRMTrainer, TrainingConfig, TranscoderConfig
+from attention_studio.ui.graphics_view import InteractiveGraphicsView
 from attention_studio.ui.model_viz import ModelVisualizationWidget
 
 
@@ -343,9 +347,8 @@ class StudioMainWindow(QMainWindow):
         layout.addWidget(toolbar)
 
         self._graph_scene = QGraphicsScene()
-        self._graph_view = QGraphicsView(self._graph_scene)
+        self._graph_view = InteractiveGraphicsView(self._graph_scene)
         self._graph_view.setRenderHint(QPainter.RenderHint.Antialiasing)
-        self._graph_view.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self._graph_view.setBackgroundBrush(QBrush(QColor("#1e1e1e")))
         layout.addWidget(self._graph_view)
 
@@ -987,50 +990,219 @@ class StudioMainWindow(QMainWindow):
         if not graph.nodes():
             return
 
-        import networkx as nx
-        try:
-            pos = nx.spring_layout(graph, k=2, iterations=50, seed=42)
-        except Exception:
-            pos = {n: (i % 10 * 100, i // 10 * 100) for i, n in enumerate(graph.nodes())}
 
-        node_items = {}
-        colors = {
+        nodes_by_layer: dict[int, list] = {}
+        for node in graph.nodes():
+            layer = graph.nodes[node].get("layer", 0)
+            activation = graph.nodes[node].get("activation", 0.1)
+            if layer not in nodes_by_layer:
+                nodes_by_layer[layer] = []
+            nodes_by_layer[layer].append((node, activation))
+
+        layer_colors = {
             0: QColor(46, 204, 113),
             1: QColor(52, 152, 219),
             2: QColor(155, 89, 182),
             3: QColor(241, 196, 15),
             4: QColor(230, 126, 34),
+            5: QColor(231, 76, 60),
+            6: QColor(26, 188, 156),
+            7: QColor(149, 165, 166),
+            8: QColor(52, 73, 94),
+            9: QColor(192, 57, 43),
+            10: QColor(41, 128, 185),
+            11: QColor(142, 68, 173),
         }
 
-        for _i, node in enumerate(graph.nodes()):
-            layer = graph.nodes[node].get("layer", 0)
-            x, y = pos[node]
-            x = x * 150 + 400
-            y = y * 150 + 300
+        sorted_layers = sorted(nodes_by_layer.keys())
+        layer_spacing = 200
+        node_spacing = 60
 
-            color = colors.get(layer % 5, QColor(100, 100, 100))
+        node_positions = {}
+        max_nodes_in_layer = max(len(nodes) for nodes in nodes_by_layer.values()) if nodes_by_layer else 1
 
-            rect = self._graph_scene.addEllipse(x - 15, y - 15, 30, 30)
-            rect.setBrush(QBrush(color))
-            rect.setPen(QPen(color.darker(150), 2))
+        for layer_idx, layer in enumerate(sorted_layers):
+            nodes = nodes_by_layer[layer]
+            nodes.sort(key=lambda x: x[1], reverse=True)
+            total_height = (len(nodes) - 1) * node_spacing
+            start_y = -total_height / 2
 
-            label = self._graph_scene.addText(node[:12])
-            label.setDefaultTextColor(QColor(220, 220, 230))
-            label.setFont(QFont("SF Mono", 6))
-            label.setPos(x - 10, y - 8)
-            label.setZValue(10)
+            for i, (node, activation) in enumerate(nodes):
+                x = layer_idx * layer_spacing + 100
+                y = start_y + i * node_spacing + 300
+                node_positions[node] = (x, y, activation, layer)
 
-            node_items[node] = (x, y)
-
+        edge_items = []
         for src, dst in graph.edges():
-            if src in node_items and dst in node_items:
-                x1, y1 = node_items[src]
-                x2, y2 = node_items[dst]
-                weight = graph[src][dst].get("weight", 1.0)
+            if src in node_positions and dst in node_positions:
+                x1, y1, act1, _ = node_positions[src]
+                x2, y2, act2, _ = node_positions[dst]
+                weight = graph[src][dst].get("weight", 0.5)
+                edge_items.append((x1, y1, x2, y2, weight, src, dst))
 
-                line = self._graph_scene.addLine(x1 + 15, y1, x2 - 15, y2)
-                line.setPen(QPen(QColor(100, 100, 120), max(0.5, abs(weight))))
+        edge_items.sort(key=lambda x: abs(x[4]), reverse=True)
+        for x1, y1, x2, y2, weight, _src, _dst in edge_items:
+            if abs(weight) > 0.01:
+                edge_color = QColor(46, 204, 113) if weight > 0 else QColor(231, 76, 60)
+                pen_width = min(max(0.5, abs(weight) * 3), 4)
+                line = self._graph_scene.addLine(x1 + 20, y1, x2 - 20, y2)
+                line.setPen(QPen(edge_color, pen_width))
+                line.setZValue(1)
 
+                mid_x = (x1 + x2) / 2
+                mid_y = (y1 + y2) / 2
+                arrow_size = 8
+                arrow = self._graph_scene.addPolygon(
+                    [mid_x, mid_y - arrow_size, mid_x + arrow_size, mid_y + arrow_size, mid_x - arrow_size, mid_y + arrow_size]
+                )
+                arrow.setBrush(QBrush(edge_color))
+                arrow.setZValue(2)
+
+        for node, (x, y, activation, layer) in node_positions.items():
+            color = layer_colors.get(layer % 12, QColor(100, 100, 100))
+            node_size = 15 + min(activation * 100, 35)
+
+            ellipse = self._graph_scene.addEllipse(
+                x - node_size / 2, y - node_size / 2, node_size, node_size
+            )
+            ellipse.setBrush(QBrush(color))
+            ellipse.setPen(QPen(color.darker(150), 2))
+            ellipse.setZValue(10)
+            ellipse.setToolTip(f"{node}\nLayer: {layer}\nActivation: {activation:.4f}")
+
+            label_text = f"F{graph.nodes[node].get('feature', node.split('_F')[-1] if '_F' in node else '?')}"
+            label = self._graph_scene.addText(label_text)
+            label.setDefaultTextColor(QColor(255, 255, 255))
+            label.setFont(QFont("SF Mono", 8, QFont.Weight.Bold))
+            label.setPos(x - 10, y - 8)
+            label.setZValue(11)
+
+            if layer in sorted_layers:
+                layer_x = layer_idx * layer_spacing + 100
+                layer_label = self._graph_scene.addText(f"Layer {layer}")
+                layer_label.setDefaultTextColor(layer_colors.get(layer, QColor(200, 200, 200)))
+                layer_label.setFont(QFont("SF Mono", 10, QFont.Weight.Bold))
+                layer_label.setPos(layer_x - 25, 30)
+                layer_label.setZValue(20)
+
+        self._graph_scene.setSceneRect(-50, -50, len(sorted_layers) * layer_spacing + 100, max_nodes_in_layer * node_spacing + 400)
+        self._graph_view.fitInView(self._graph_scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+
+    def _render_attribution_graph(self, graph: CompleteAttributionGraph):
+        self._graph_scene.clear()
+
+        if not graph.nodes:
+            return
+
+        nodes_by_layer: dict[int, list] = {}
+        for node_id, node in graph.nodes.items():
+            layer = node.layer
+            activation = abs(node.activation)
+            if layer not in nodes_by_layer:
+                nodes_by_layer[layer] = []
+            nodes_by_layer[layer].append((node_id, activation, node))
+
+        layer_colors = {
+            0: QColor(46, 204, 113),
+            1: QColor(52, 152, 219),
+            2: QColor(155, 89, 182),
+            3: QColor(241, 196, 15),
+            4: QColor(230, 126, 34),
+            5: QColor(231, 76, 60),
+            6: QColor(26, 188, 156),
+            7: QColor(149, 165, 166),
+            8: QColor(52, 73, 94),
+            9: QColor(192, 57, 43),
+            10: QColor(41, 128, 185),
+            11: QColor(142, 68, 173),
+        }
+
+        node_type_colors = {
+            "embedding": QColor(255, 255, 0),
+            "transcoder": QColor(0, 191, 255),
+            "lorsa": QColor(255, 105, 180),
+        }
+
+        sorted_layers = sorted(nodes_by_layer.keys())
+        layer_spacing = 200
+        node_spacing = 60
+
+        node_positions = {}
+        max_nodes_in_layer = max(len(nodes) for nodes in nodes_by_layer.values()) if nodes_by_layer else 1
+
+        for layer_idx, layer in enumerate(sorted_layers):
+            nodes = nodes_by_layer[layer]
+            nodes.sort(key=lambda x: x[1], reverse=True)
+            total_height = (len(nodes) - 1) * node_spacing
+            start_y = -total_height / 2
+
+            for i, (node_id, activation, node) in enumerate(nodes):
+                x = layer_idx * layer_spacing + 100
+                y = start_y + i * node_spacing + 300
+                node_positions[node_id] = (x, y, activation, layer, node)
+
+        edge_items = []
+        for (src_id, dst_id), edge in graph.edges.items():
+            if src_id in node_positions and dst_id in node_positions:
+                x1, y1, act1, layer1, _ = node_positions[src_id]
+                x2, y2, act2, layer2, _ = node_positions[dst_id]
+                weight = edge.weight
+
+                edge_items.append((x1, y1, x2, y2, weight, src_id, dst_id, edge.edge_type))
+
+        edge_items.sort(key=lambda x: abs(x[4]), reverse=True)
+        max_edges = 100
+        for x1, y1, x2, y2, weight, _src_id, _dst_id, edge_type in edge_items[:max_edges]:
+            if abs(weight) > 0.001:
+                edge_color = QColor(46, 204, 113) if weight > 0 else QColor(231, 76, 60)
+                pen_width = min(max(0.3, abs(weight) * 2), 3)
+                line = self._graph_scene.addLine(x1 + 10, y1, x2 - 10, y2)
+                line.setPen(QPen(edge_color, pen_width))
+                line.setZValue(1)
+                line.setToolTip(f"{edge_type}: {weight:.4f}")
+
+        for _node_id, (x, y, activation, _layer, node) in node_positions.items():
+            color = node_type_colors.get(node.node_type, QColor(100, 100, 100))
+            node_size = 12 + min(activation * 50, 30)
+
+            ellipse = self._graph_scene.addEllipse(
+                x - node_size / 2, y - node_size / 2, node_size, node_size
+            )
+            ellipse.setBrush(QBrush(color))
+            ellipse.setPen(QPen(color.darker(150), 2))
+            ellipse.setZValue(10)
+
+            label_text = f"{node.node_type[:3].upper()}"
+            if node.feature_idx is not None:
+                label_text = f"{node.node_type[:2].upper()}{node.feature_idx}"
+            if node.token:
+                label_text = f"{label_text[:4]}"
+
+            label = self._graph_scene.addText(label_text[:6])
+            label.setDefaultTextColor(QColor(255, 255, 255))
+            label.setFont(QFont("SF Mono", 7, QFont.Weight.Bold))
+            label.setPos(x - 8, y - 6)
+            label.setZValue(11)
+
+            tooltip = f"{node.node_type} L{node.layer} P{node.position}"
+            if node.feature_idx is not None:
+                tooltip += f" F{node.feature_idx}"
+            if node.token:
+                tooltip += f" {node.token}"
+            tooltip += f"\nActivation: {node.activation:.4f}"
+            ellipse.setToolTip(tooltip)
+
+        for layer_idx, layer in enumerate(sorted_layers):
+            layer_x = layer_idx * layer_spacing + 100
+            layer_label = self._graph_scene.addText(f"Layer {layer}")
+            layer_label.setDefaultTextColor(layer_colors.get(layer % 12, QColor(200, 200, 200)))
+            layer_label.setFont(QFont("SF Mono", 10, QFont.Weight.Bold))
+            layer_label.setPos(layer_x - 25, 30)
+            layer_label.setZValue(20)
+
+        scene_width = len(sorted_layers) * layer_spacing + 200
+        scene_height = max_nodes_in_layer * node_spacing + 400
+        self._graph_scene.setSceneRect(-50, -50, scene_width, scene_height)
         self._graph_view.fitInView(self._graph_scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
 
     def _on_find_circuits(self):
@@ -1044,31 +1216,41 @@ class StudioMainWindow(QMainWindow):
 
         prompt = self._graph_prompt_edit.text() or "The quick brown fox"
         self._graph_find_circuits_btn.setEnabled(False)
-        self._graph_info_label.setText("Finding global circuits...")
+        self._graph_info_label.setText("Building complete attribution graph...")
 
         def find():
-            analyzer = GlobalCircuitAnalyzer(
+            builder = AttributionGraphBuilder(
                 self.model_manager,
                 self.trainer.transcoders,
-                self.trainer.lorsas if hasattr(self.trainer, 'loras') else None,
+                self.trainer.lorsas if hasattr(self.trainer, 'lorsas') and self.trainer.lorsas else None,
                 self.trainer.layer_indices if hasattr(self.trainer, 'layer_indices') else None,
             )
-            circuits = analyzer.analyze_all_circuits(prompt)
-            return circuits
+            graph = builder.build_complete_attribution_graph(prompt, threshold=0.01)
+            circuits = builder.find_global_circuits(threshold=0.1)
+            return graph, circuits
 
-        def on_done(circuits):
+        def on_done(result):
+            graph, circuits = result
             self._graph_find_circuits_btn.setEnabled(True)
+            self._current_graph = graph
 
-            if circuits:
-                self._graph_info_label.setText(f"Found {len(circuits)} circuit types")
-                for circuit_type, circuit_list in circuits.items():
-                    self.log_text.append(f"  {circuit_type}: {len(circuit_list)} circuits")
-            else:
-                self._graph_info_label.setText("No significant circuits found")
+            num_nodes = len(graph.nodes)
+            num_edges = len(graph.edges)
+            self._graph_info_label.setText(f"Graph: {num_nodes} nodes, {num_edges} edges")
+
+            self.log_text.append(f"Built complete attribution graph with {num_nodes} nodes and {num_edges} edges")
+
+            for circuit_type, circuit_list in circuits.items():
+                if circuit_list:
+                    self.log_text.append(f"  {circuit_type}: {len(circuit_list)} paths")
+
+            self._render_attribution_graph(graph)
 
         def on_error(err):
+            import traceback
             self._graph_find_circuits_btn.setEnabled(True)
-            self.log_text.append(f"Error finding circuits: {err}")
+            self.log_text.append(f"Error building attribution graph: {err}")
+            self.log_text.append(traceback.format_exc())
 
         self._run_async(find, on_done, on_error)
 
@@ -1164,29 +1346,58 @@ class StudioMainWindow(QMainWindow):
         self.log_text.append(f"Analyzing circuit for feature {feature_idx} in layer {layer_idx}...")
 
         def analyze():
-            analyzer = GlobalCircuitAnalyzer(
+            builder = AttributionGraphBuilder(
                 self.model_manager,
                 self.trainer.transcoders,
-                self.trainer.lorsas if hasattr(self.trainer, 'loras') else None,
+                self.trainer.lorsas if hasattr(self.trainer, 'lorsas') and self.trainer.lorsas else None,
                 self.trainer.layer_indices if hasattr(self.trainer, 'layer_indices') else None,
             )
-            circuit_info = analyzer.compute_feature_circuits(layer_idx, feature_idx)
-            return circuit_info
 
-        def on_done(circuit_info):
+            prompt = self._feat_prompt_edit.text() or "The quick brown fox"
+            graph = builder.build_complete_attribution_graph(prompt, threshold=0.001)
+            qk_results = builder.compute_qk_tracing(prompt, layer_idx)
+
+            return {
+                "feature": feature,
+                "graph": graph,
+                "qk_results": qk_results,
+            }
+
+        def on_done(result):
             self._feat_circuit_btn.setEnabled(True)
+
+            feature = result["feature"]
+            graph = result["graph"]
+            qk_results = result["qk_results"]
+
+            num_nodes = len(graph.nodes)
+            num_edges = len(graph.edges)
 
             details = f"""Feature Circuit Analysis
 ========================
-Layer: {circuit_info['layer_idx']}
-Feature ID: {circuit_info['feature_idx']}
-Decoder Norm: {circuit_info['norm']:.4f}
-Encoder Norm: {circuit_info['encoder_norm']:.4f}
-QK Circuit: {'Available' if circuit_info['qk_circuit'] else 'Not available'}
-OV Circuit: {'Available' if circuit_info['ov_circuit'] else 'Not available'}
+Feature ID: {feature.idx}
+Layer: {feature.layer}
+Activation: {feature.activation:.4f}
+Norm: {feature.norm:.4f}
+
+Complete Attribution Graph:
+  Nodes: {num_nodes}
+  Edges: {num_edges}
+
+QK Tracing Results:
+  Analyzed {len(qk_results)} attention positions
 """
+
+            if qk_results and len(qk_results) > 0:
+                first_result = qk_results[0]
+                if first_result.feature_contributions:
+                    details += "\nTop Feature Contributions:\n"
+                    for fc in first_result.feature_contributions[:5]:
+                        details += f"  F{fc['feature_idx']}: {fc['contribution']:.4f} ({fc['token']})\n"
+
             self._feat_details_text.setText(details)
-            self.log_text.append(f"Analyzed circuit for feature {feature_idx} in layer {layer_idx}")
+            self._current_graph = graph
+            self.log_text.append(f"Analyzed circuit: {num_nodes} nodes, {num_edges} edges")
 
         def on_error(err):
             import traceback
