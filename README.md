@@ -60,6 +60,12 @@ uv run python -m attention_studio
 3. **Train**: Select dataset and click "Train" to train the transcoder
 4. **Analyze**: Use Features tab for feature extraction, Graph tab for attribution
 
+## Screenshots
+
+![AttentionStudio Main View](screenshots/attention-studio-1.jpg)
+
+![AttentionStudio Graph View](screenshots/attention-studio-2.jpg)
+
 ## Development
 
 ```bash
