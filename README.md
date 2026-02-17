@@ -48,9 +48,9 @@ uv pip install -e ".[dev]"
 
 ```bash
 # Run the application
-attention-studio
+uv run attention-studio
 # or
-python -m attention_studio
+uv run python -m attention_studio
 ```
 
 ### Quick Start
@@ -63,23 +63,20 @@ python -m attention_studio
 ## Development
 
 ```bash
-# Activate virtual environment
-source .venv/bin/activate
-
 # Run tests
-pytest
+uv run pytest
 
 # Run specific test file
-pytest tests/unit/test_crm.py
+uv run pytest tests/unit/test_crm.py
 
 # Run with coverage
-pytest --cov=attention_studio --cov-report=html
+uv run pytest --cov=attention_studio --cov-report=html
 
 # Lint
-ruff check .
+uv run ruff check .
 
 # Type check
-mypy attention_studio/
+uv run mypy attention_studio/
 ```
 
 ## Architecture
