@@ -109,7 +109,6 @@ class AttributionGraphBuilder:
                 decoder_vec=None,
             )
             graph.add_node(emb_node_id)
-            node_id += 1
 
         all_activations = []
         for tc_idx, layer in enumerate(self.layer_indices):
@@ -159,19 +158,19 @@ class AttributionGraphBuilder:
                 hidden_states = outputs.hidden_states[layer]
 
                 batch, seq_len, hidden_dim = hidden_states.shape
-                Q = lorsa.W_Q(hidden_states)
-                K = lorsa.W_K(hidden_states)
-                V = lorsa.W_V(hidden_states)
+                q = lorsa.W_Q(hidden_states)  # noqa: N806
+                k = lorsa.W_K(hidden_states)  # noqa: N806
+                v = lorsa.W_V(hidden_states)  # noqa: N806
 
-                Q = Q.view(batch, seq_len, lorsa.num_heads, lorsa.head_dim).transpose(1, 2)
-                K = K.view(batch, seq_len, lorsa.num_heads, lorsa.head_dim).transpose(1, 2)
-                V = V.view(batch, seq_len, lorsa.num_heads, lorsa.head_dim).transpose(1, 2)
+                q = q.view(batch, seq_len, lorsa.num_heads, lorsa.head_dim).transpose(1, 2)  # noqa: N806
+                k = k.view(batch, seq_len, lorsa.num_heads, lorsa.head_dim).transpose(1, 2)  # noqa: N806
+                v = v.view(batch, seq_len, lorsa.num_heads, lorsa.head_dim).transpose(1, 2)  # noqa: N806
 
                 if hasattr(lorsa, 'q_layernorm'):
-                    Q = lorsa.q_layernorm(Q)
-                    K = lorsa.k_layernorm(K)
+                    q = lorsa.q_layernorm(q)  # noqa: N806
+                    k = lorsa.k_layernorm(k)  # noqa: N806
 
-                scores = torch.matmul(Q, K.transpose(-2, -1)) / (lorsa.head_dim ** 0.5)
+                scores = torch.matmul(q, k.transpose(-2, -1)) / (lorsa.head_dim ** 0.5)
                 attn_probs = torch.softmax(scores, dim=-1)
 
                 sparse_v = lorsa.sparse_W_V
@@ -257,19 +256,19 @@ class AttributionGraphBuilder:
             hidden_states = outputs.hidden_states[layer]
 
             batch, seq_len, hidden_dim = hidden_states.shape
-            Q = lorsa.W_Q(hidden_states)
-            K = lorsa.W_K(hidden_states)
-            V = lorsa.W_V(hidden_states)
+            q = lorsa.W_Q(hidden_states)  # noqa: N806
+            k = lorsa.W_K(hidden_states)  # noqa: N806
+            v = lorsa.W_V(hidden_states)  # noqa: N806
 
-            Q = Q.view(batch, seq_len, lorsa.num_heads, lorsa.head_dim).transpose(1, 2)
-            K = K.view(batch, seq_len, lorsa.num_heads, lorsa.head_dim).transpose(1, 2)
-            V = V.view(batch, seq_len, lorsa.num_heads, lorsa.head_dim).transpose(1, 2)
+            q = q.view(batch, seq_len, lorsa.num_heads, lorsa.head_dim).transpose(1, 2)  # noqa: N806
+            k = k.view(batch, seq_len, lorsa.num_heads, lorsa.head_dim).transpose(1, 2)  # noqa: N806
+            v = v.view(batch, seq_len, lorsa.num_heads, lorsa.head_dim).transpose(1, 2)  # noqa: N806
 
             if hasattr(lorsa, 'q_layernorm'):
-                Q = lorsa.q_layernorm(Q)
-                K = lorsa.k_layernorm(K)
+                q = lorsa.q_layernorm(q)  # noqa: N806
+                k = lorsa.k_layernorm(k)  # noqa: N806
 
-            scores = torch.matmul(Q, K.transpose(-2, -1)) / (lorsa.head_dim ** 0.5)
+            scores = torch.matmul(q, k.transpose(-2, -1)) / (lorsa.head_dim ** 0.5)
             attn_probs = torch.softmax(scores, dim=-1)
 
             sparse_v = lorsa.sparse_W_V
@@ -400,15 +399,15 @@ class AttributionGraphBuilder:
         hidden_states = outputs.hidden_states[layer_idx]
 
         batch, seq_len, hidden_dim = hidden_states.shape
-        Q = lorsa.W_Q(hidden_states)
-        K = lorsa.W_K(hidden_states)
+        Q = lorsa.W_Q(hidden_states)  # noqa: N806
+        K = lorsa.W_K(hidden_states)  # noqa: N806
 
-        Q = Q.view(batch, seq_len, lorsa.num_heads, lorsa.head_dim).transpose(1, 2)
-        K = K.view(batch, seq_len, lorsa.num_heads, lorsa.head_dim).transpose(1, 2)
+        Q = Q.view(batch, seq_len, lorsa.num_heads, lorsa.head_dim).transpose(1, 2)  # noqa: N806
+        K = K.view(batch, seq_len, lorsa.num_heads, lorsa.head_dim).transpose(1, 2)  # noqa: N806
 
         if hasattr(lorsa, 'q_layernorm'):
-            Q = lorsa.q_layernorm(Q)
-            K = lorsa.k_layernorm(K)
+            Q = lorsa.q_layernorm(Q)  # noqa: N806
+            K = lorsa.k_layernorm(K)  # noqa: N806
 
         scores = torch.matmul(Q, K.transpose(-2, -1)) / (lorsa.head_dim ** 0.5)
 
@@ -487,7 +486,7 @@ class AttributionGraphBuilder:
                     continue
 
                 w_v = lorsa.sparse_W_V[head]
-                w_o = lorsa.sparse_W_V[head] if head < len(lorsa.sparse_W_O) else lorsa.sparse_W_O[0]
+                w_o = lorsa.sparse_W_O[head] if head < len(lorsa.sparse_W_O) else lorsa.sparse_W_O[0]
 
                 ov_strength = torch.norm(w_v) * torch.norm(w_o)
                 ov_strength = ov_strength.item()
