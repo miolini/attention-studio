@@ -69,7 +69,7 @@ class StudioMainWindow(QMainWindow):
 
         self._setup_ui()
         self._setup_logging()
-        self._apply_stylesheet()
+        self._apply_dark_theme()
 
     def _setup_logging(self):
         logger.add(
@@ -85,7 +85,7 @@ class StudioMainWindow(QMainWindow):
             format="{time:HH:mm:ss} | {level: <8} | {message}",
         )
 
-    def _apply_stylesheet(self):
+    def _apply_dark_theme(self):
         self.setStyleSheet("""
             QMainWindow { background-color: #1e1e1e; color: #cccccc; }
             QWidget { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
@@ -144,36 +144,105 @@ class StudioMainWindow(QMainWindow):
         menubar = self.menuBar()
 
         file_menu = menubar.addMenu("File")
-        file_menu.addAction("Open Model...", self._on_open_model)
-        file_menu.addAction("Load Dataset...", self._on_load_dataset)
+        open_action = file_menu.addAction("Open Model...", self._on_open_model)
+        open_action.setShortcut("Ctrl+O")
+        dataset_action = file_menu.addAction("Load Dataset...", self._on_load_dataset)
+        dataset_action.setShortcut("Ctrl+D")
         file_menu.addSeparator()
-        file_menu.addAction("Save Workflow...")
-        file_menu.addAction("Load Workflow...")
+        save_action = file_menu.addAction("Save Workflow...")
+        save_action.setShortcut("Ctrl+S")
+        load_action = file_menu.addAction("Load Workflow...")
+        load_action.setShortcut("Ctrl+Shift+S")
         file_menu.addSeparator()
-        file_menu.addAction("Preferences...", self._on_preferences)
+        prefs_action = file_menu.addAction("Preferences...", self._on_preferences)
+        prefs_action.setShortcut("Ctrl+,")
         file_menu.addSeparator()
-        file_menu.addAction("Exit", self.close)
+        exit_action = file_menu.addAction("Exit", self.close)
+        exit_action.setShortcut("Ctrl+Q")
 
         edit_menu = menubar.addMenu("Edit")
-        edit_menu.addAction("Undo")
-        edit_menu.addAction("Redo")
+        undo_action = edit_menu.addAction("Undo")
+        undo_action.setShortcut("Ctrl+Z")
+        redo_action = edit_menu.addAction("Redo")
+        redo_action.setShortcut("Ctrl+Shift+Z")
         edit_menu.addSeparator()
-        edit_menu.addAction("Cut")
-        edit_menu.addAction("Copy")
-        edit_menu.addAction("Paste")
+        cut_action = edit_menu.addAction("Cut")
+        cut_action.setShortcut("Ctrl+X")
+        copy_action = edit_menu.addAction("Copy")
+        copy_action.setShortcut("Ctrl+C")
+        paste_action = edit_menu.addAction("Paste")
+        paste_action.setShortcut("Ctrl+V")
 
         view_menu = menubar.addMenu("View")
         view_menu.addAction("Toggle Left Sidebar", self.toggle_left_sidebar)
         view_menu.addAction("Toggle Right Sidebar", self.toggle_right_sidebar)
         view_menu.addAction("Toggle Bottom Pane", self.toggle_bottom_pane)
+        view_menu.addSeparator()
+        theme_menu = view_menu.addMenu("Theme")
+        dark_action = theme_menu.addAction("Dark", lambda: self._set_theme("dark"))
+        dark_action.setShortcut("Ctrl+Alt+D")
+        light_action = theme_menu.addAction("Light", lambda: self._set_theme("light"))
+        light_action.setShortcut("Ctrl+Alt+L")
 
         model_menu = menubar.addMenu("Model")
-        model_menu.addAction("Load Model...", self._on_load_model)
-        model_menu.addAction("Unload Model", self._on_unload_model)
+        load_action = model_menu.addAction("Load Model...", self._on_load_model)
+        load_action.setShortcut("Ctrl+L")
+        unload_action = model_menu.addAction("Unload Model", self._on_unload_model)
+        unload_action.setShortcut("Ctrl+U")
 
         training_menu = menubar.addMenu("Training")
-        training_menu.addAction("Build CRM", self._on_build_crm)
-        training_menu.addAction("Train Transcoder", self._on_train)
+        build_action = training_menu.addAction("Build CRM", self._on_build_crm)
+        build_action.setShortcut("Ctrl+B")
+        train_action = training_menu.addAction("Train Transcoder", self._on_train)
+        train_action.setShortcut("Ctrl+T")
+
+    def _set_theme(self, theme: str):
+        if theme == "dark":
+            self._apply_dark_theme()
+        else:
+            self._apply_light_theme()
+
+    def _apply_light_theme(self):
+        self.setStyleSheet("""
+            QMainWindow { background-color: #f5f5f5; color: #333; }
+            QWidget { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+            QMenuBar { background-color: #e0e0e0; color: #333; border-bottom: 1px solid #ccc; }
+            QMenuBar::item { padding: 6px 12px; }
+            QMenuBar::item:selected { background-color: #d0d0d0; }
+            QMenu { background-color: #fff; color: #333; border: 1px solid #ccc; }
+            QMenu::item { padding: 6px 24px 6px 12px; }
+            QMenu::item:selected { background-color: #e0e0e0; }
+            QToolBar { background-color: #e0e0e0; border: none; padding: 4px; spacing: 4px; }
+            QToolButton { background-color: transparent; color: #333; border: none; padding: 6px; border-radius: 4px; }
+            QToolButton:hover { background-color: #d0d0d0; }
+            QDockWidget { color: #333; border: 1px solid #ccc; }
+            QDockWidget::title { background-color: #e0e0e0; padding: 6px 8px; border-bottom: 1px solid #ccc; }
+            QPushButton { background-color: #0e639c; color: white; border: none; padding: 6px 14px; border-radius: 3px; font-size: 12px; }
+            QPushButton:hover { background-color: #1177bb; }
+            QPushButton:pressed { background-color: #0d5a8f; }
+            QPushButton:disabled { background-color: #ccc; color: #888; }
+            QLineEdit, QTextEdit, QSpinBox, QComboBox { background-color: #fff; color: #333; border: 1px solid #ccc; padding: 5px 8px; border-radius: 3px; font-size: 12px; }
+            QLineEdit:focus, QTextEdit:focus { border: 1px solid #0e639c; }
+            QLabel { color: #333; font-size: 12px; }
+            QGroupBox { color: #333; border: 1px solid #ccc; border-radius: 4px; margin-top: 8px; padding-top: 8px; font-weight: 600; }
+            QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 6px; }
+            QTabWidget::pane { border: 1px solid #ccc; background-color: #f5f5f5; }
+            QTabBar::tab { background-color: #e0e0e0; color: #333; padding: 8px 16px; border: 1px solid #ccc; border-bottom: none; }
+            QTabBar::tab:selected { background-color: #f5f5f5; border-bottom: 2px solid #0e639c; }
+            QTabBar::tab:hover { background-color: #d0d0d0; }
+            QTreeWidget, QListWidget, QTableWidget { background-color: #fff; color: #333; border: 1px solid #ccc; outline: none; }
+            QTreeWidget::item:selected, QListWidget::item:selected, QTableWidget::item:selected { background-color: #cce5ff; }
+            QHeaderView::section { background-color: #e0e0e0; color: #333; padding: 6px; border: 1px solid #ccc; font-weight: 600; }
+            QProgressBar { border: 1px solid #ccc; border-radius: 3px; background-color: #fff; text-align: center; }
+            QProgressBar::chunk { background-color: #0e639c; }
+            QSplitter::handle { background-color: #ccc; }
+            QScrollBar:vertical { background-color: #f5f5f5; width: 12px; border: none; }
+            QScrollBar::handle:vertical { background-color: #aaa; border-radius: 6px; min-height: 20px; }
+            QScrollBar:horizontal { background-color: #f5f5f5; height: 12px; border: none; }
+            QScrollBar::handle:horizontal { background-color: #aaa; border-radius: 6px; min-width: 20px; }
+            QStatusBar { background-color: #007acc; color: white; border-top: 1px solid #ccc; }
+            QStatusBar::item { border: none; }
+        """)
 
     def _create_toolbar(self):
         toolbar = QToolBar("Main Toolbar")
