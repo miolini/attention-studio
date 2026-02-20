@@ -693,3 +693,193 @@ class AttributionGraphBuilder:
             if source_node and target_node and source_node.layer == source_layer and target_node.layer == target_layer:
                 cross_layer_edges[edge_key] = edge
         return cross_layer_edges
+
+
+class LazyAttributionGraphBuilder:
+    def __init__(
+        self,
+        model_manager: Any,
+        transcoders: nn.ModuleList,
+        lorsas: nn.ModuleList | None = None,
+        layer_indices: list[int] | None = None,
+        cache_size: int = 1000,
+    ):
+        self.model_manager = model_manager
+        self.transcoders = transcoders
+        self.lorsas = lorsas
+        self.layer_indices = layer_indices or list(range(len(transcoders)))
+        self.model = model_manager.model
+        self.tokenizer = model_manager.tokenizer
+        self._node_cache: dict[str, AttributionNode] = {}
+        self._edge_cache: dict[tuple[str, str], AttributionEdge] = {}
+        self._cache_size = cache_size
+        self._cached_outputs = None
+        self._cached_prompt = None
+
+    def _get_model_outputs(self, prompt: str):
+        if self._cached_prompt == prompt and self._cached_outputs is not None:
+            return self._cached_outputs
+
+        inputs = self.tokenizer(prompt, return_tensors="pt")
+        input_ids = inputs["input_ids"].to(self.model.device)
+
+        with torch.no_grad():
+            outputs = self.model(
+                input_ids=input_ids,
+                output_hidden_states=True,
+                return_dict=True,
+            )
+
+        self._cached_outputs = outputs
+        self._cached_prompt = prompt
+        return outputs
+
+    def get_embedding_nodes(self, prompt: str) -> dict[str, AttributionNode]:
+        inputs = self.tokenizer(prompt, return_tensors="pt")
+        input_ids = inputs["input_ids"].to(self.model.device)
+        tokens = self.tokenizer.convert_ids_to_tokens(input_ids[0])
+
+        nodes = {}
+        for pos, token in enumerate(tokens):
+            node_id = f"emb_{pos}"
+            if node_id in self._node_cache:
+                nodes[node_id] = self._node_cache[node_id]
+            else:
+                node = AttributionNode(
+                    node_id=node_id,
+                    node_type="embedding",
+                    layer=0,
+                    position=pos,
+                    feature_idx=None,
+                    token=token,
+                    activation=1.0,
+                    encoder_vec=None,
+                    decoder_vec=None,
+                )
+                self._node_cache[node_id] = node
+                nodes[node_id] = node
+
+        return nodes
+
+    def get_transcoder_nodes(
+        self,
+        prompt: str,
+        layer_idx: int,
+        top_k: int = 50,
+    ) -> dict[str, AttributionNode]:
+        if layer_idx not in self.layer_indices:
+            return {}
+
+        cache_key = f"tc_{layer_idx}"
+        if cache_key in self._node_cache:
+            return self._node_cache[cache_key]
+
+        outputs = self._get_model_outputs(prompt)
+        tc_idx = self.layer_indices.index(layer_idx)
+        transcoder = self.transcoders[tc_idx]
+
+        hidden_states = outputs.hidden_states[layer_idx]
+        _, features = transcoder(hidden_states)
+        features = features.squeeze(0)
+
+        tokens = self.tokenizer.convert_ids_to_tokens(outputs.hidden_states[0].shape[1] * ["token"])
+
+        nodes = {}
+        for pos in range(features.shape[0]):
+            pos_features = features[pos].abs()
+            top_features = torch.topk(pos_features, min(top_k, len(pos_features)))
+
+            for feat_idx, act in zip(top_features.indices, top_features.values, strict=True):
+                if act.item() > 0.01:
+                    node_id = f"tc_{layer_idx}_{pos}_{feat_idx.item()}"
+                    node = AttributionNode(
+                        node_id=node_id,
+                        node_type="transcoder",
+                        layer=layer_idx,
+                        position=pos,
+                        feature_idx=feat_idx.item(),
+                        token=tokens[pos] if pos < len(tokens) else "",
+                        activation=act.item(),
+                        encoder_vec=transcoder.encoder.weight[feat_idx].detach().cpu() if transcoder.encoder.weight is not None else None,
+                        decoder_vec=transcoder.decoder.weight[:, feat_idx].detach().cpu() if transcoder.decoder.weight is not None else None,
+                    )
+                    nodes[node_id] = node
+                    self._node_cache[node_id] = node
+
+        return nodes
+
+    def get_layer_edges(
+        self,
+        prompt: str,
+        source_layer: int,
+        target_layer: int,
+        threshold: float = 0.01,
+    ) -> dict[tuple[str, str], AttributionEdge]:
+        edges = {}
+
+        source_nodes = self.get_transcoder_nodes(prompt, source_layer)
+        target_nodes = self.get_transcoder_nodes(prompt, target_layer)
+
+        for src_id, src_node in source_nodes.items():
+            for tgt_id, tgt_node in target_nodes.items():
+                if src_node.position == tgt_node.position and src_node.decoder_vec is not None and tgt_node.encoder_vec is not None:
+                    weight = torch.dot(src_node.decoder_vec, tgt_node.encoder_vec).item()
+                    if abs(weight) > threshold:
+                        edge = AttributionEdge(
+                            source_id=src_id,
+                            target_id=tgt_id,
+                            weight=weight,
+                            edge_type="transcoder",
+                        )
+                        edges[(src_id, tgt_id)] = edge
+
+        return edges
+
+    def build_subgraph(
+        self,
+        prompt: str,
+        layers: list[int] | None = None,
+        top_k_per_layer: int = 20,
+    ) -> CompleteAttributionGraph:
+        layers = layers or self.layer_indices
+
+        graph = nx.DiGraph()
+        nodes = self.get_embedding_nodes(prompt)
+        edges = {}
+
+        for node_id, _node in nodes.items():
+            graph.add_node(node_id)
+
+        prev_layer = None
+        for layer in sorted(layers):
+            layer_nodes = self.get_transcoder_nodes(prompt, layer, top_k_per_layer)
+            nodes.update(layer_nodes)
+
+            for node_id in layer_nodes:
+                graph.add_node(node_id)
+
+            if prev_layer is not None:
+                layer_edges = self.get_layer_edges(prompt, prev_layer, layer)
+                edges.update(layer_edges)
+                for (src, tgt), edge in layer_edges.items():
+                    graph.add_edge(src, tgt, weight=edge.weight)
+
+            prev_layer = layer
+
+        tokens = list(self.tokenizer.convert_ids_to_tokens(
+            self.tokenizer(prompt, return_tensors="pt")["input_ids"][0]
+        ))
+
+        return CompleteAttributionGraph(
+            graph=graph,
+            nodes=nodes,
+            edges=edges,
+            prompt=prompt,
+            tokens=tokens,
+        )
+
+    def clear_cache(self):
+        self._node_cache.clear()
+        self._edge_cache.clear()
+        self._cached_outputs = None
+        self._cached_prompt = None
