@@ -316,6 +316,12 @@ class StudioMainWindow(QMainWindow):
         self._features_tab = self._create_features_tab()
         self._main_tabs.addTab(self._features_tab, "Features")
 
+        self._comparison_tab = self._create_comparison_tab()
+        self._main_tabs.addTab(self._comparison_tab, "Compare")
+
+        self._agent_tab = self._create_agent_tab()
+        self._main_tabs.addTab(self._agent_tab, "AI Agent")
+
         central_layout.addWidget(self._main_tabs)
 
     def _create_graph_tab(self) -> QWidget:
@@ -407,6 +413,31 @@ class StudioMainWindow(QMainWindow):
         self._feat_details_text.setReadOnly(True)
         self._feat_details_text.setStyleSheet("QTextEdit { background-color: #252526; color: #cccccc; border: 1px solid #3c3c3c; }")
         layout.addWidget(self._feat_details_text)
+
+        return tab
+
+    def _create_comparison_tab(self) -> QWidget:
+        from attention_studio.ui.widgets.comparison import PromptComparisonWidget
+
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(8, 8, 8, 8)
+
+        self._comparison_widget = PromptComparisonWidget()
+        self._comparison_widget.comparison_complete.connect(self._on_comparison_request)
+        layout.addWidget(self._comparison_widget)
+
+        return tab
+
+    def _create_agent_tab(self) -> QWidget:
+        from attention_studio.ui.widgets.agent_panel import AgentPanel
+
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(8, 8, 8, 8)
+
+        self._agent_panel = AgentPanel()
+        layout.addWidget(self._agent_panel)
 
         return tab
 
@@ -1405,6 +1436,76 @@ QK Tracing Results:
             self.log_text.append(traceback.format_exc())
 
         self._run_async(analyze, on_done, on_error)
+
+    def _on_comparison_request(self, data: dict):
+        if not self.model_manager.is_loaded:
+            self.log_text.append("Model not loaded")
+            return
+
+        if not self.trainer or not self.trainer.transcoders:
+            self.log_text.append("CRM not built")
+            return
+
+        prompt_a = data.get("prompt_a", "")
+        prompt_b = data.get("prompt_b", "")
+
+        if not prompt_a or not prompt_b:
+            return
+
+        self.log_text.append(f"Comparing prompts: '{prompt_a[:30]}...' vs '{prompt_b[:30]}...'")
+
+        def compare():
+            from attention_studio.core.feature_extractor import (
+                FeatureExtractor,
+                GlobalCircuitAnalyzer,
+            )
+
+            features_a = []
+            features_b = []
+
+            for layer_idx in self.trainer.layer_indices:
+                transcoder = self.trainer.get_transcoder(layer_idx)
+                if transcoder:
+                    extractor = FeatureExtractor(self.model_manager, transcoder, layer_idx)
+                    layer_features_a = extractor.extract_features(prompt_a, top_k=30)
+                    layer_features_b = extractor.extract_features(prompt_b, top_k=30)
+
+                    for f in layer_features_a:
+                        features_a.append({
+                            "idx": f.idx,
+                            "layer": f.layer,
+                            "activation": f.activation,
+                            "norm": f.norm,
+                        })
+                    for f in layer_features_b:
+                        features_b.append({
+                            "idx": f.idx,
+                            "layer": f.layer,
+                            "activation": f.activation,
+                            "norm": f.norm,
+                        })
+
+            analyzer = GlobalCircuitAnalyzer(
+                self.model_manager,
+                self.trainer.transcoders,
+                getattr(self.trainer, 'lorsas', None),
+                self.trainer.layer_indices,
+            )
+
+            circuits_a = analyzer.analyze_all_circuits(prompt_a)
+            circuits_b = analyzer.analyze_all_circuits(prompt_b)
+
+            return features_a, features_b, circuits_a, circuits_b
+
+        def on_done(result):
+            features_a, features_b, circuits_a, circuits_b = result
+            self._comparison_widget.set_results(features_a, features_b, circuits_a, circuits_b)
+            self.log_text.append("Comparison complete")
+
+        def on_error(err):
+            self.log_text.append(f"Comparison error: {err}")
+
+        self._run_async(compare, on_done, on_error)
 
     def _on_init_agents(self):
         if not self._api_key_edit.text():
