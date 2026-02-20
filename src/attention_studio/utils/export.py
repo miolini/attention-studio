@@ -289,3 +289,35 @@ def export_report_to_html(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html_content)
+
+
+def export_graph_to_png(
+    scene,
+    output_path: Path,
+    width: int = 1920,
+    height: int = 1080,
+) -> bool:
+        from PySide6.QtCore import QRectF
+        from PySide6.QtGui import QImage, QPainter
+
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        rect = scene.sceneRect()
+        if rect.isEmpty():
+            rect = QRectF(0, 0, width, height)
+
+        image = QImage(int(rect.width()), int(rect.height()), QImage.Format.Format_ARGB32)
+        image.fill(0)
+
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+
+        scene.render(painter, QRectF(0, 0, rect.width(), rect.height()), rect)
+
+        painter.end()
+
+        return image.save(str(output_path))
+    except Exception:
+        return False
