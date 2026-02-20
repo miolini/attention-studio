@@ -349,3 +349,203 @@ class TestAttributionGraphBuilder:
         assert "prev_token" in circuits
         assert isinstance(circuits["induction"], list)
         assert isinstance(circuits["prev_token"], list)
+
+    def test_find_paths(self):
+        import networkx as nx
+
+        class MockTokenizer:
+            def __call__(self, text, return_tensors=None):
+                return {"input_ids": torch.randint(0, 50000, (1, 10))}
+
+            def convert_ids_to_tokens(self, ids):
+                return ["token"] * len(ids)
+
+        class MockModel:
+            device = torch.device("cpu")
+
+            def embed_tokens(self, ids):
+                return torch.randn(1, 768)
+
+        class MockTranscoder(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.encoder = nn.Linear(768, 512)
+                self.decoder = nn.Linear(512, 768)
+
+            def forward(self, x):
+                encoded = self.encoder(x)
+                decoded = self.decoder(encoded)
+                return decoded, encoded
+
+        model_manager = MockModelManager(MockModel(), MockTokenizer())
+        transcoder = MockTranscoder()
+        transcoders = nn.ModuleList([transcoder])
+
+        builder = AttributionGraphBuilder(
+            model_manager=model_manager,
+            transcoders=transcoders,
+            lorsas=None,
+            layer_indices=[0],
+        )
+
+        graph = nx.DiGraph()
+        graph.add_edge("a", "b", weight=0.5)
+        graph.add_edge("b", "c", weight=0.3)
+
+        nodes = {
+            "a": AttributionNode(
+                node_id="a", node_type="transcoder", layer=0, position=0,
+                feature_idx=0, token="a", activation=0.5, encoder_vec=None, decoder_vec=None
+            ),
+            "b": AttributionNode(
+                node_id="b", node_type="transcoder", layer=1, position=1,
+                feature_idx=1, token="b", activation=0.3, encoder_vec=None, decoder_vec=None
+            ),
+            "c": AttributionNode(
+                node_id="c", node_type="transcoder", layer=2, position=2,
+                feature_idx=2, token="c", activation=0.2, encoder_vec=None, decoder_vec=None
+            ),
+        }
+
+        edges = {
+            ("a", "b"): AttributionEdge("a", "b", 0.5, "mlp"),
+            ("b", "c"): AttributionEdge("b", "c", 0.3, "mlp"),
+        }
+
+        complete_graph = CompleteAttributionGraph(graph=graph, nodes=nodes, edges=edges)
+
+        paths = builder.find_paths(complete_graph, "a", "c")
+        assert len(paths) > 0
+        assert ["a", "b", "c"] in paths
+
+    def test_filter_edges(self):
+        import networkx as nx
+
+        class MockTokenizer:
+            def __call__(self, text, return_tensors=None):
+                return {"input_ids": torch.randint(0, 50000, (1, 10))}
+
+            def convert_ids_to_tokens(self, ids):
+                return ["token"] * len(ids)
+
+        class MockModel:
+            device = torch.device("cpu")
+
+            def embed_tokens(self, ids):
+                return torch.randn(1, 768)
+
+        class MockTranscoder(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.encoder = nn.Linear(768, 512)
+                self.decoder = nn.Linear(512, 768)
+
+            def forward(self, x):
+                encoded = self.encoder(x)
+                decoded = self.decoder(encoded)
+                return decoded, encoded
+
+        model_manager = MockModelManager(MockModel(), MockTokenizer())
+        transcoder = MockTranscoder()
+        transcoders = nn.ModuleList([transcoder])
+
+        builder = AttributionGraphBuilder(
+            model_manager=model_manager,
+            transcoders=transcoders,
+            lorsas=None,
+            layer_indices=[0],
+        )
+
+        graph = nx.DiGraph()
+        nodes = {
+            "a": AttributionNode(
+                node_id="a", node_type="transcoder", layer=0, position=0,
+                feature_idx=0, token="a", activation=0.5, encoder_vec=None, decoder_vec=None
+            ),
+            "b": AttributionNode(
+                node_id="b", node_type="transcoder", layer=1, position=1,
+                feature_idx=1, token="b", activation=0.3, encoder_vec=None, decoder_vec=None
+            ),
+        }
+
+        edges = {
+            ("a", "b"): AttributionEdge("a", "b", 0.5, "mlp"),
+        }
+
+        complete_graph = CompleteAttributionGraph(graph=graph, nodes=nodes, edges=edges)
+
+        filtered = builder.filter_edges(complete_graph, min_weight=0.3)
+        assert len(filtered) == 1
+
+        filtered = builder.filter_edges(complete_graph, min_weight=0.6)
+        assert len(filtered) == 0
+
+    def test_compute_graph_metrics(self):
+        import networkx as nx
+
+        class MockTokenizer:
+            def __call__(self, text, return_tensors=None):
+                return {"input_ids": torch.randint(0, 50000, (1, 10))}
+
+            def convert_ids_to_tokens(self, ids):
+                return ["token"] * len(ids)
+
+        class MockModel:
+            device = torch.device("cpu")
+
+            def embed_tokens(self, ids):
+                return torch.randn(1, 768)
+
+        class MockTranscoder(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.encoder = nn.Linear(768, 512)
+                self.decoder = nn.Linear(512, 768)
+
+            def forward(self, x):
+                encoded = self.encoder(x)
+                decoded = self.decoder(encoded)
+                return decoded, encoded
+
+        model_manager = MockModelManager(MockModel(), MockTokenizer())
+        transcoder = MockTranscoder()
+        transcoders = nn.ModuleList([transcoder])
+
+        builder = AttributionGraphBuilder(
+            model_manager=model_manager,
+            transcoders=transcoders,
+            lorsas=None,
+            layer_indices=[0],
+        )
+
+        graph = nx.DiGraph()
+        graph.add_edge("a", "b", weight=0.5)
+        graph.add_edge("b", "c", weight=0.3)
+
+        nodes = {
+            "a": AttributionNode(
+                node_id="a", node_type="transcoder", layer=0, position=0,
+                feature_idx=0, token="a", activation=0.5, encoder_vec=None, decoder_vec=None
+            ),
+            "b": AttributionNode(
+                node_id="b", node_type="transcoder", layer=1, position=1,
+                feature_idx=1, token="b", activation=0.3, encoder_vec=None, decoder_vec=None
+            ),
+            "c": AttributionNode(
+                node_id="c", node_type="transcoder", layer=2, position=2,
+                feature_idx=2, token="c", activation=0.2, encoder_vec=None, decoder_vec=None
+            ),
+        }
+
+        edges = {
+            ("a", "b"): AttributionEdge("a", "b", 0.5, "mlp"),
+            ("b", "c"): AttributionEdge("b", "c", 0.3, "mlp"),
+        }
+
+        complete_graph = CompleteAttributionGraph(graph=graph, nodes=nodes, edges=edges)
+
+        metrics = builder.compute_graph_metrics(complete_graph)
+
+        assert "degree_centrality" in metrics
+        assert "pagerank" in metrics
+        assert len(metrics["degree_centrality"]) == 3

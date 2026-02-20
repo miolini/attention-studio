@@ -540,3 +540,156 @@ class AttributionGraphBuilder:
                     ))
 
         return circuits
+
+    def find_paths(
+        self,
+        graph: CompleteAttributionGraph,
+        source_node: str,
+        target_node: str,
+        max_length: int = 10,
+        threshold: float = 0.01,
+    ) -> list[list[str]]:
+        if source_node not in graph.graph or target_node not in graph.graph:
+            return []
+
+        try:
+            paths = list(nx.all_simple_paths(
+                graph.graph,
+                source_node,
+                target_node,
+                cutoff=max_length,
+            ))
+            filtered_paths = []
+            for path in paths:
+                total_weight = 0.0
+                for i in range(len(path) - 1):
+                    edge = graph.edges.get((path[i], path[i + 1]))
+                    if edge:
+                        total_weight += abs(edge.weight)
+                if total_weight >= threshold:
+                    filtered_paths.append(path)
+            return filtered_paths
+        except nx.NetworkXNoPath:
+            return []
+
+    def find_shortest_path(
+        self,
+        graph: CompleteAttributionGraph,
+        source_node: str,
+        target_node: str,
+        use_weights: bool = True,
+    ) -> list[str] | None:
+        if source_node not in graph.graph or target_node not in graph.graph:
+            return None
+
+        try:
+            if use_weights:
+                return nx.shortest_path(
+                    graph.graph,
+                    source_node,
+                    target_node,
+                    weight=lambda u, v, d: abs(d.get("weight", 1.0)),
+                )
+            else:
+                return nx.shortest_path(graph.graph, source_node, target_node)
+        except nx.NetworkXNoPath:
+            return None
+
+    def filter_edges(
+        self,
+        graph: CompleteAttributionGraph,
+        min_weight: float = 0.0,
+        max_weight: float | None = None,
+        edge_types: list[str] | None = None,
+    ) -> dict[tuple[str, str], AttributionEdge]:
+        filtered = {}
+        for edge_key, edge in graph.edges.items():
+            if abs(edge.weight) < min_weight:
+                continue
+            if max_weight is not None and abs(edge.weight) > max_weight:
+                continue
+            if edge_types is not None and edge.edge_type not in edge_types:
+                continue
+            filtered[edge_key] = edge
+        return filtered
+
+    def filter_nodes(
+        self,
+        graph: CompleteAttributionGraph,
+        node_types: list[str] | None = None,
+        layers: list[int] | None = None,
+        min_activation: float = 0.0,
+    ) -> dict[str, AttributionNode]:
+        filtered = {}
+        for node_id, node in graph.nodes.items():
+            if node_types is not None and node.node_type not in node_types:
+                continue
+            if layers is not None and node.layer not in layers:
+                continue
+            if abs(node.activation) < min_activation:
+                continue
+            filtered[node_id] = node
+        return filtered
+
+    def compute_graph_metrics(
+        self,
+        graph: CompleteAttributionGraph,
+    ) -> dict[str, dict[str, float]]:
+        if len(graph.graph.nodes) == 0:
+            return {}
+
+        metrics = {}
+
+        try:
+            degree_centrality = nx.degree_centrality(graph.graph)
+            metrics["degree_centrality"] = degree_centrality
+        except Exception:
+            metrics["degree_centrality"] = {}
+
+        try:
+            betweenness = nx.betweenness_centrality(graph.graph, weight="weight")
+            metrics["betweenness_centrality"] = betweenness
+        except Exception:
+            metrics["betweenness_centrality"] = {}
+
+        try:
+            pagerank = nx.pagerank(graph.graph, weight="weight")
+            metrics["pagerank"] = pagerank
+        except Exception:
+            metrics["pagerank"] = {}
+
+        try:
+            in_degrees = dict(graph.graph.in_degree())
+            out_degrees = dict(graph.graph.out_degree())
+            metrics["in_degree"] = in_degrees
+            metrics["out_degree"] = out_degrees
+        except Exception:
+            metrics["in_degree"] = {}
+            metrics["out_degree"] = {}
+
+        return metrics
+
+    def find_cycles(
+        self,
+        graph: CompleteAttributionGraph,
+        max_length: int = 10,
+    ) -> list[list[str]]:
+        try:
+            cycles = list(nx.simple_cycles(graph.graph))
+            return [c for c in cycles if len(c) <= max_length]
+        except Exception:
+            return []
+
+    def find_edge_between_layers(
+        self,
+        graph: CompleteAttributionGraph,
+        source_layer: int,
+        target_layer: int,
+    ) -> dict[tuple[str, str], AttributionEdge]:
+        cross_layer_edges = {}
+        for edge_key, edge in graph.edges.items():
+            source_node = graph.nodes.get(edge_key[0])
+            target_node = graph.nodes.get(edge_key[1])
+            if source_node and target_node and source_node.layer == source_layer and target_node.layer == target_layer:
+                cross_layer_edges[edge_key] = edge
+        return cross_layer_edges

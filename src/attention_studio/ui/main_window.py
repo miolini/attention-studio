@@ -44,7 +44,6 @@ from attention_studio.core.attribution_graph import (
 from attention_studio.core.dataset import DatasetConfig, DatasetManager
 from attention_studio.core.feature_extractor import (
     FeatureExtractor,
-    GlobalCircuitAnalyzer,
     GraphBuilder,
 )
 from attention_studio.core.model_manager import ModelConfig, ModelManager
