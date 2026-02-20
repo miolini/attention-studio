@@ -297,8 +297,8 @@ def export_graph_to_png(
     width: int = 1920,
     height: int = 1080,
 ) -> bool:
-        from PySide6.QtCore import QRectF
-        from PySide6.QtGui import QImage, QPainter
+    from PySide6.QtCore import QRectF
+    from PySide6.QtGui import QImage, QPainter
 
     try:
         output_path.parent.mkdir(parents=True, exist_ok=True)
