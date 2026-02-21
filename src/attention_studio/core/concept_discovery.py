@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import torch
@@ -209,7 +209,7 @@ class ConceptMatcher:
         token_features: list[list[int]],
     ) -> dict[str, list[Concept]]:
         results = {}
-        for token, features in zip(tokens, token_features):
+        for token, features in zip(tokens, token_features, strict=True):
             matched_concepts = self.find_concepts_for_features(features)
             results[token] = matched_concepts[:5]
 

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import torch
-import torch.nn.functional as F
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
+import torch
+import torch.nn.functional as functional
 
 
 @dataclass
@@ -23,7 +23,7 @@ class LayerRepresentationAnalyzer:
     def compute_layer_norms(
         self,
         prompts: list[str],
-        layer_indices: Optional[list[int]] = None,
+        layer_indices: list[int] | None = None,
     ) -> dict[int, float]:
         tokenizer = self.model_manager.tokenizer
         model = self.model_manager.model
@@ -59,7 +59,7 @@ class LayerRepresentationAnalyzer:
     def compute_layer_variance(
         self,
         prompts: list[str],
-        layer_indices: Optional[list[int]] = None,
+        layer_indices: list[int] | None = None,
     ) -> dict[int, float]:
         tokenizer = self.model_manager.tokenizer
         model = self.model_manager.model
@@ -95,7 +95,7 @@ class LayerRepresentationAnalyzer:
     def compute_layer_similarities(
         self,
         prompts: list[str],
-        layer_indices: Optional[list[int]] = None,
+        layer_indices: list[int] | None = None,
     ) -> dict[tuple[int, int], float]:
         tokenizer = self.model_manager.tokenizer
         model = self.model_manager.model
@@ -136,7 +136,7 @@ class LayerRepresentationAnalyzer:
     def compute_representational_similarity(
         self,
         prompts: list[str],
-        layer_indices: Optional[list[int]] = None,
+        layer_indices: list[int] | None = None,
     ) -> np.ndarray:
         tokenizer = self.model_manager.tokenizer
         model = self.model_manager.model
@@ -177,7 +177,7 @@ class LayerRepresentationAnalyzer:
                     reps_i = [r[i] for r in representations]
                     reps_j = [r[j] for r in reps_i]
 
-                    diffs = [np.linalg.norm(a - b) for a, b in zip(reps_i, reps_j)]
+                    diffs = [np.linalg.norm(a - b) for a, b in zip(reps_i, reps_j, strict=True)]
                     rdm[i, j] = np.mean(diffs)
 
         return rdm
@@ -214,7 +214,7 @@ class LayerTransitionAnalyzer:
             diff = (hidden_next - hidden_curr).abs()
             change_magnitude = diff.mean().item()
 
-            corr = F.cosine_similarity(
+            corr = functional.cosine_similarity(
                 hidden_curr.flatten(),
                 hidden_next.flatten(),
                 dim=0,
@@ -250,7 +250,7 @@ class LayerTransitionAnalyzer:
 
             for layer_idx in layer_indices:
                 hidden_states = outputs.hidden_states[layer_idx]
-                probs = F.softmax(hidden_states, dim=-1)
+                probs = functional.softmax(hidden_states, dim=-1)
                 entropy = -(probs * torch.log(probs + 1e-8)).sum(dim=-1).mean().item()
                 entropies[layer_idx].append(entropy)
 
@@ -338,7 +338,7 @@ class LayerComparison:
     def find_optimal_layer(
         layer_metrics: dict[int, float],
         criterion: str = "max",
-    ) -> Optional[int]:
+    ) -> int | None:
         if not layer_metrics:
             return None
 

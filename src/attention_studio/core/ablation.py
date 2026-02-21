@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import torch
@@ -53,10 +53,7 @@ class FeatureAblator:
 
         def create_hook(feat_indices):
             def hook(module, inp, output):
-                if isinstance(output, tuple):
-                    hidden = output[0]
-                else:
-                    hidden = output
+                hidden = output[0] if isinstance(output, tuple) else output
                 _, features = self.transcoder(hidden)
                 for idx in feat_indices:
                     features[:, :, idx] = ablation_value
@@ -167,10 +164,7 @@ class LayerAblator:
 
         def create_hook(layer_idx, ablation_type):
             def hook(module, inp, output):
-                if isinstance(output, tuple):
-                    hidden = output[0]
-                else:
-                    hidden = output
+                hidden = output[0] if isinstance(output, tuple) else output
                 if ablation_type == "zero":
                     hidden = torch.zeros_like(hidden)
                 elif ablation_type == "mean":
@@ -211,7 +205,7 @@ class AblationStudyManager:
     def __init__(self):
         self.studies: dict[str, AblationStudy] = {}
 
-    def create_study(self, name: str, metadata: Optional[dict] = None) -> AblationStudy:
+    def create_study(self, name: str, metadata: dict | None = None) -> AblationStudy:
         study = AblationStudy(name=name, metadata=metadata or {})
         self.studies[name] = study
         return study
@@ -221,7 +215,7 @@ class AblationStudyManager:
             raise ValueError(f"Study {study_name} not found")
         self.studies[study_name].results.append(result)
 
-    def get_study(self, name: str) -> Optional[AblationStudy]:
+    def get_study(self, name: str) -> AblationStudy | None:
         return self.studies.get(name)
 
     def compare_ablations(
@@ -295,7 +289,7 @@ class AblationStudyManager:
 
     def load_study(self, path: str) -> None:
         import json
-        with open(path, "r") as f:
+        with open(path) as f:
             data = json.load(f)
 
         for name, study_data in data.items():
